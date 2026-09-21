@@ -47,6 +47,10 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+// ---- Conversaciones: cada una se guarda en KV (namespace MEMORIA) bajo la clave "conv:<id>" ----
+const PREFIJO_CONV = "conv:";
+const ID_VALIDO = /^[a-z0-9]{1,40}$/i;
+
 // ---- Memoria: lee y guarda la lista de notas en KV (namespace MEMORIA) ----
 async function leerNotas(env) {
   if (!env.MEMORIA) return [];
@@ -200,6 +204,88 @@ export default {
           status: 500,
           headers: { "Content-Type": "application/json", ...CORS_HEADERS },
         });
+      }
+    }
+
+    // ---- Endpoint de conversaciones: listar, abrir una, guardar y borrar (solo mismo origen, sin CORS) ----
+    if (url.pathname === "/api/conversaciones") {
+      const responder = (objeto, estado) =>
+        new Response(JSON.stringify(objeto), {
+          status: estado || 200,
+          headers: { "Content-Type": "application/json" },
+        });
+
+      if (!env.MEMORIA) {
+        return responder({ error: "Falta enlazar el KV namespace MEMORIA a este Worker." }, 500);
+      }
+
+      try {
+        if (request.method === "GET") {
+          const id = url.searchParams.get("id");
+
+          // Abrir una conversación completa
+          if (id) {
+            if (!ID_VALIDO.test(id)) return responder({ error: "Id inválido." }, 400);
+            const conversacion = await env.MEMORIA.get(PREFIJO_CONV + id, "json");
+            if (!conversacion) return responder({ error: "No se encontró la conversación." }, 404);
+            return responder({ conversacion });
+          }
+
+          // Listado: solo id, título, fecha y si está fijada (viene en los metadatos de cada clave)
+          const conversaciones = [];
+          let cursor;
+          do {
+            const pagina = await env.MEMORIA.list({ prefix: PREFIJO_CONV, cursor });
+            for (const clave of pagina.keys) {
+              const meta = clave.metadata || {};
+              conversaciones.push({
+                id: clave.name.slice(PREFIJO_CONV.length),
+                titulo: meta.titulo || "Conversación",
+                actualizado: meta.actualizado || 0,
+                fijado: !!meta.fijado,
+              });
+            }
+            cursor = pagina.list_complete ? undefined : pagina.cursor;
+          } while (cursor);
+          return responder({ conversaciones });
+        }
+
+        if (request.method === "POST") {
+          const body = await request.json();
+          const c = body.conversacion || {};
+          if (!ID_VALIDO.test(String(c.id || ""))) return responder({ error: "Id inválido." }, 400);
+          if (!Array.isArray(c.historial)) return responder({ error: "Falta el historial de la conversación." }, 400);
+
+          const titulo = String(c.titulo || "Nueva conversación").slice(0, 120);
+          const guardar = {
+            id: c.id,
+            titulo,
+            actualizado: Number(c.actualizado) || Date.now(),
+            fijado: !!c.fijado,
+            historial: c.historial,
+            pasos: c.pasos && typeof c.pasos === "object" ? c.pasos : {},
+          };
+          const texto = JSON.stringify(guardar);
+          if (texto.length > 20000000) {
+            return responder({ error: "La conversación es demasiado grande para guardarla en la nube." }, 413);
+          }
+
+          await env.MEMORIA.put(PREFIJO_CONV + c.id, texto, {
+            metadata: { titulo, actualizado: guardar.actualizado, fijado: guardar.fijado },
+          });
+          return responder({ ok: true });
+        }
+
+        if (request.method === "DELETE") {
+          const body = await request.json();
+          if (!ID_VALIDO.test(String(body.id || ""))) return responder({ error: "Id inválido." }, 400);
+          await env.MEMORIA.delete(PREFIJO_CONV + body.id);
+          return responder({ ok: true });
+        }
+
+        return new Response("Método no permitido", { status: 405 });
+      } catch (err) {
+        return responder({ error: err.message }, 500);
       }
     }
 
