@@ -1,0 +1,40 @@
+{
+  "name": "nova-codigo",
+  "main": "worker.js",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "kv_namespaces": [
+    {
+      "binding": "MEMORIA",
+      "id": "a5493b871b0448f5b84deb11815d8ed4"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ADJUNTOS",
+      "bucket_name": "chatnova-adjuntos"
+    }
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "ANTHROPIC_API_KEY",
+      "store_id": "0b8718303ef04edcb512f657836e61f6",
+      "secret_name": "ANTHROPIC_API_KEY"
+    },
+    {
+      "binding": "DEEPSEEK_API_KEY",
+      "store_id": "0b8718303ef04edcb512f657836e61f6",
+      "secret_name": "DEEPSEEK_API_KEY"
+    },
+    {
+      "binding": "OPENAI_API_KEY",
+      "store_id": "0b8718303ef04edcb512f657836e61f6",
+      "secret_name": "OPENAI_API_KEY"
+    }
+  ]
+}
